@@ -22,9 +22,13 @@ export default function StarRating({
   const [rating, setRating] = useState(defaultRating);
   const [tempRating, setTempRating] = useState(0);
   function handleRating(rating) {
-    setRating(rating);
-    onSetRating(rating);
+    if (onSetRating) {
+      onSetRating(rating);
+    } else {
+      setRating(rating);
+    }
   }
+
   const textStyle = {
     lineHeight: "1",
     margin: "0",
@@ -40,7 +44,7 @@ export default function StarRating({
             <Star
               key={i}
               full={tempRating ? tempRating >= i + 1 : rating >= i + 1} //if there is a temp rating, then do the same thing but with tempRating, then tempRating >= i+1. if not, do what we had before. the stars stay set because we have the rating set (so if we click on a star).
-              onRate={() => handleRating(i + 1)}
+              onSetRating={() => handleRating(i + 1)}
               onHoverIn={() => setTempRating(i + 1)}
               onHoverOut={() => setTempRating(0)}
               color={color}
@@ -58,7 +62,7 @@ export default function StarRating({
   );
 }
 
-function Star({ onRate, full, onHoverIn, onHoverOut, color, size }) {
+function Star({ onSetRating, full, onHoverIn, onHoverOut, color, size }) {
   const starStyle = {
     width: `${size}px`,
     height: `${size}px`,
@@ -69,7 +73,7 @@ function Star({ onRate, full, onHoverIn, onHoverOut, color, size }) {
     <span
       role="button"
       style={starStyle}
-      onClick={onRate}
+      onClick={onSetRating}
       onMouseEnter={onHoverIn}
       onMouseLeave={onHoverOut}
     >
