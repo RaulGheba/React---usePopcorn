@@ -1,8 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import StarRating from "./StarRating";
-import { useMovies } from "./useMovies";
-import { useLocalStorageState } from "./useLocalStorageState";
-import { useKey } from "./useKey";
 
 const average = (arr) =>
   arr.reduce((acc, cur, i, arr) => acc + cur / arr.length, 0);
@@ -10,14 +7,14 @@ const average = (arr) =>
 const KEY = "55358428";
 export default function App() {
   const [query, setQuery] = useState("");
+  const [movies, setMovies] = useState([]);
+  const [watched, setWatched] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
 
-  const { movies, isLoading, error } = useMovies(query);
-
-  const [watched, setWatched] = useLocalStorageState([], "watched");
-
   function handleSelectMovie(id) {
-    setSelectedId((selectedId) => (id === selectedId ? null : id)); //if I click on the movie again, it closes its box.
+    setSelectedId((selectedId) => (id === selectedId ? null : id)); //if i click on the movie again, it closes its box.
   }
 
   function handleCloseMovie() {
@@ -26,6 +23,8 @@ export default function App() {
 
   function handleAddWatched(movie) {
     setWatched((watched) => [...watched, movie]);
+
+    localStorage.setItem("watched", JSON.stringify([...watched, movie]));
   }
 
   function handleDeleteWatched(id) {
@@ -34,10 +33,47 @@ export default function App() {
 
   useEffect(
     function () {
-      localStorage.setItem("watched", JSON.stringify(watched));
+      const controller = new AbortController();
+      async function fetchMovies() {
+        try {
+          setIsLoading(true); //indicates to the UI that loading is happening
+          setError(""); // the error was never reset, so before we fetch, we make it empty here.
+          const res = await fetch(
+            `http://www.omdbapi.com/?apikey=${KEY}&s=${query}`
+          );
+          if (!res.ok) {
+            throw new Error("Something went wrong with fetching movies");
+          } // if nothing goes wrong, we just move on. no need for 'else' here
+
+          const data = await res.json();
+
+          if (data.Response === "False") {
+            throw new Error("Movie not found");
+          } // if nothing goes wrong, we just move on. no need for 'else' here
+
+          setMovies(data.Search); //the movies array is set to every movie found by the user search/query
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          // because code after errors is no longer evaluated, we put a finally block here.
+          setIsLoading(false);
+        }
+      }
+      if (query.length < 3) {
+        setMovies([]);
+        setError("");
+        return;
+      }
+
+      handleCloseMovie();
+      fetchMovies();
+
+      return function () {
+        controller.abort();
+      };
     },
-    [watched]
-  );
+    [query]
+  ); //this array is the DEPENDENCY ARRAY.
 
   return (
     <>
@@ -107,34 +143,6 @@ function Logo() {
 }
 
 function Search({ query, setQuery }) {
-  const inputEl = useRef(null);
-
-  useKey("Enter", function () {
-    if (document.activeElement === inputEl.current) return;
-    inputEl.current.focus();
-    setQuery("");
-  });
-
-  useEffect(
-    function () {
-      function callback(e) {
-        if (inputEl.current && document.activeElement !== inputEl.current) {
-          return;
-        }
-        if (e.code === "Enter") {
-          inputEl.current.focus();
-
-          setQuery("");
-        }
-      }
-
-      document.addEventListener("keydown", callback);
-
-      return () => document.removeEventListener("keydown", callback);
-    },
-    [setQuery]
-  );
-
   return (
     <input
       className="search"
@@ -142,7 +150,6 @@ function Search({ query, setQuery }) {
       placeholder="Search movies..."
       value={query}
       onChange={(e) => setQuery(e.target.value)}
-      ref={inputEl}
     />
   );
 }
@@ -175,15 +182,6 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
   const [movie, setMovie] = useState({}); //we get an object from the API call below, so state is an object initially.
   const [isLoading, setIsLoading] = useState(false);
   const [userRating, setUserRating] = useState("");
-
-  const countRef = useRef(0);
-
-  useEffect(
-    function () {
-      if (userRating) countRef.current++;
-    },
-    [userRating]
-  );
   const isWatched = watched.map((movie) => movie.imdbID).includes(selectedId);
   const watchedUserRating = watched.find(
     (movie) => movie.imdbID === selectedId
@@ -201,6 +199,9 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
     Genre: genre,
   } = movie; //the variables are in uppercase in the response, so we simply changed them to lowercase in our code
 
+  const isTop = imdbRating > 8;
+  console.log(isTop);
+
   function handleAdd() {
     const newWatchedMovie = {
       imdbID: selectedId,
@@ -210,14 +211,27 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
       imdbRating: Number(imdbRating),
       runtime: Number(runtime.split(" ").at(0)),
       userRating,
-      countRatingDecisions: countRef.current,
     };
 
     onAddWatched(newWatchedMovie);
     onCloseMovie();
   }
 
-  useKey("Escape", onCloseMovie);
+  useEffect(
+    function () {
+      function callback(e) {
+        if (e.code === "Escape") {
+          onCloseMovie();
+        }
+      }
+      document.addEventListener("keydown", callback);
+
+      return function () {
+        document.removeEventListener("keydown", callback); //just write it
+      };
+    },
+    [onCloseMovie]
+  );
 
   useEffect(
     function () {
@@ -278,7 +292,6 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
                 maxRating={10}
                 size={24}
                 onSetRating={setUserRating}
-                defaultRating={0}
               />
               {userRating > 0 && (
                 <button className="btn-add" onClick={handleAdd}>
